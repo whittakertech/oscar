@@ -1,0 +1,63 @@
+AllCops:
+  NewCops: enable
+  SuggestExtensions: false
+  TargetRubyVersion: 3.2
+  Exclude:
+    - 'spec/dummy/**/*'
+    - 'vendor/**/*'
+    - 'bin/**/*'
+    - 'script/**/*'
+
+plugins:
+  - rubocop-performance
+  - rubocop-rails
+  - rubocop-rspec
+
+Style/Documentation:
+  Enabled: false
+
+Metrics/BlockLength:
+  Exclude:
+    - '*.gemspec'
+    - 'spec/**/*'
+    - 'lib/tasks/**/*'
+    - 'db/migrate/**/*'
+
+Metrics/MethodLength:
+  Max: 15
+  Exclude:
+    - 'db/migrate/**/*'
+
+Metrics/AbcSize:
+  Max: 20
+  Exclude:
+    - 'db/migrate/**/*'
+
+Style/BlockDelimiters:
+  EnforcedStyle: line_count_based
+  AllowBracesOnProceduralOneLiners: true
+
+Style/ClassAndModuleChildren:
+  EnforcedStyle: compact
+
+Lint/EmptyBlock:
+  Exclude:
+    - 'config/routes.rb'
+
+RSpec/MultipleExpectations:
+  Enabled: false
+
+RSpec/ExampleLength:
+  Enabled: false
+
+RSpec/NestedGroups:
+  Max: 4
+
+RSpec/MultipleMemoizedHelpers:
+  Enabled: false
+
+RSpec/NamedSubject:
+  Enabled: false
+
+RSpec/LetSetup:
+  Enabled: false

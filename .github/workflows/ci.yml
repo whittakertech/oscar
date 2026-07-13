@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+    tags:
+      - "v*.*.*"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # No `services:` block: the self-hosted Gitea Actions runner attaches
+    # per-job service containers to the shared `proxy` Docker network, which
+    # also carries Aerie's always-on permanent `postgres` container under
+    # that exact name — a same-alias DNS collision that intermittently
+    # routes queries to production instead of an ephemeral CI container (hit
+    # this on sesame's CI, 2026-07-12). Aerie already runs a long-lived,
+    # disposable `postgres-hatchery` instance on `proxy` (uniquely named, no
+    # collision risk, always up so no health-check race) — connect to that
+    # directly instead of spinning up a per-job Postgres.
+    env:
+      DATABASE_HOST: postgres-hatchery
+      DATABASE_USER: postgres
+      RAILS_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install dependencies
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Install postgresql-client (for structure.sql dumps)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client
+
+      - name: Setup database
+        run: |
+          cd spec/dummy
+          bundle exec rails db:drop db:create db:migrate
+
+      - name: Run RSpec
+        run: bundle exec rspec
+
+      - name: Run RuboCop
+        run: bundle exec rubocop --parallel
+
+      # Non-blocking: internal v0.1 engine, no shipped consumers yet. Findings
+      # stay visible in every CI log; a dependency/Rails upgrade backlog is a
+      # separate task, not folded into feature work.
+      - name: Run Brakeman
+        run: bundle exec brakeman --no-pager
+        continue-on-error: true
+
+      - name: Run bundler-audit
+        run: |
+          bundle exec bundler-audit update
+          bundle exec bundler-audit check
+        continue-on-error: true

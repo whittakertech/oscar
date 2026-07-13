@@ -1,0 +1,10 @@
+/.idea/
+/coverage/
+/pkg/
+/tmp/
+/vendor/bundle/
+*.gem
+spec/dummy/log/
+spec/dummy/tmp/
+/site/
+/.yardoc/

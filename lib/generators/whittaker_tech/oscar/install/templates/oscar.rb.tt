@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+# WhittakerTech::Oscar taxonomy configuration.
+#
+# States are exclusive; transitions are declared; nothing changes state
+# except through a named transition. See docs/design.md (in the oscar gem)
+# for the full schema and boundary rules.
+#
+# WhittakerTech::Oscar.configure do |config|
+#   config.taxonomy = {
+#     states: {
+#       draft:     { destroyable: false },
+#       published: { destroyable: false },
+#       archived:  { destroyable: false },
+#       trashed:   { destroyable: false },
+#       purged:    { destroyable: true, locked: true }
+#     },
+#     transitions: {
+#       publish: { from: :draft,     to: :published, past: :published },
+#       archive: { from: :published, to: :archived,  past: :archived },
+#       trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
+#       restore: { from: :trashed,   to: :draft,      past: :draft },
+#       purge:   { from: :trashed,   to: :purged,     past: :purged }
+#     }
+#   }
+# end
