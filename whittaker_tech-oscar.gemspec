@@ -28,5 +28,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'pg', '>= 1.1'
   spec.add_dependency 'poly', '~> 1.1'
-  spec.add_dependency 'rails', '>= 7.1', '< 8.0'
+  spec.add_dependency 'rails', '>= 7.1'
 end

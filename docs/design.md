@@ -28,15 +28,18 @@ A boring, well-validated hash in `config/initializers/oscar.rb` — root-level
 defaults plus per-model overrides. No DSL in v0.1; a DSL is only extracted
 once two engines actually consume the hash.
 
+Root defaults live in `config/initializers/oscar.rb`:
+
 ```ruby
 WhittakerTech::Oscar.configure do |config|
   config.taxonomy = {
+    initial: :draft,
     states: {
-      draft:     { destroyable: false },
-      published: { destroyable: false },
-      archived:  { destroyable: false },
-      trashed:   { destroyable: false, locked: false },
-      purged:    { destroyable: true,  locked: true }
+      draft:     {},
+      published: {},
+      archived:  {},
+      trashed:   {},
+      purged:    { destroyable: true, locked: true }
     },
     transitions: {
       publish: { from: :draft,     to: :published, past: :published },
@@ -46,18 +49,33 @@ WhittakerTech::Oscar.configure do |config|
       purge:   { from: :trashed,   to: :purged,     past: :purged }
     }
   }
-
-  # Per-model override, merged over the root defaults:
-  config.taxonomy_for(Package) = { ... }
 end
 ```
 
-Boot-time validation raises (with an actionable message) on:
+Per-model overrides are declared on the host model itself, via the
+`oscar_taxonomy` class macro from `WhittakerTech::Oscar::Stateful` — not a
+global registry keyed by class name (which would fight Rails autoloading: a
+model class object isn't a stable, always-loaded key at initializer-run
+time). The macro deep-merges its hash over the root defaults, key-by-key per
+state/transition, and validates immediately:
 
-- unknown top-level or per-state keys
-- unreachable states (no transition ever reaches them)
-- transitions referencing undeclared states
-- missing declared past-tense forms
+```ruby
+class Package < ApplicationRecord
+  include WhittakerTech::Oscar::Stateful
+
+  oscar_taxonomy states: { retired: { destroyable: true } },
+                 transitions: { retire: { from: %i[draft published], to: :retired, past: :retired } }
+end
+```
+
+A transition may also declare `escapes_lock: true` to be the sanctioned exit
+from an otherwise-locked state (e.g. a `reinstate` transition off a locked
+`banned` state) — see Concurrency/lock enforcement in `Oscar::Stateful`
+below. Boot-time validation (`WhittakerTech::Oscar::Taxonomy.new`, raising
+`InvalidTaxonomyError`) rejects: unknown top-level or per-state/per-transition
+keys, an undeclared `:initial` state, transitions referencing undeclared
+states, states unreachable via `:initial` or any transition's `:to`, and any
+transition missing its declared `:past` form.
 
 Declared past forms are **required in config**, not inflected automatically —
 irregular English (`set_aside`, not `set_asided`) makes automatic inflection
@@ -88,10 +106,16 @@ class WhittakerTech::Oscar::Status < WhittakerTech::Oscar::ApplicationRecord
 end
 ```
 
-"Current" = `superseded_by_id.nil? && is_prime?` — real indexable columns, no
-JSONB digging. **Decision for v0.1: stack-only** (no denormalized host-table
-state column). A denormalized column would add a same-transaction
-column/stack-head agreement invariant to spec for no requirement v0.1
+`WhittakerTech::Oscar::Stateful` (the host concern) declares
+`has_many :oscar_statuses, as: :resource, dependent: :destroy` and exposes
+`oscar_state` (resolves from `oscar_statuses.prime.first&.state`, falling
+back to the taxonomy's `:initial` when no transition has fired yet),
+`oscar_state?(name)`, and `oscar_transition!(name)` (validates the declared
+transition, then appends a card). "Current" = `superseded_by_id.nil? &&
+is_prime?` — real indexable columns, no JSONB digging. **Decision for v0.1:
+stack-only** (no denormalized host-table state column). A denormalized
+column would add a same-transaction column/stack-head agreement invariant to
+spec for no requirement v0.1
 actually has; the fork stays documented here for later if scope-query
 performance ever demands it.
 
@@ -117,24 +141,50 @@ validation-only enforcement, gated by a per-taxonomy config flag.
 
 ## Cascade: independent registered callbacks
 
-Sibling-engine concerns (e.g. Aeon) hook Oscar's transition event
-independently — each concern registers its own callback; no hook reads
-another's output; no hook can halt the set; all hooks run inside the single
-DB transaction wrapping the transition, so partial failure rolls back as a
-unit. This is **not** literal threads — `Thread.new` gets its own DB
-connection and cannot join the parent transaction, breaking atomicity. The
-invariant to test is commutativity: shuffling concern-inclusion order must
-produce identical outcomes. Hooks must query unscoped or receive the record
-directly (default-scope trap — moot given Oscar has no default_scope, but
-spec'd anyway as a regression guard).
+Implemented via `ActiveSupport::Notifications` (`WhittakerTech::Oscar::TRANSITION_EVENT`,
+fired by `WhittakerTech::Oscar.instrument_transition` — see
+`lib/whittaker_tech/oscar/events.rb`). Every `oscar_transition!` call fires
+exactly ONE generic event, from inside the same `with_lock` transaction that
+appended the status card:
+
+```ruby
+WhittakerTech::Oscar.on_transition do |payload|
+  # payload => { resource_gid:, from:, to:, verb: }
+  record = GlobalID::Locator.locate(payload[:resource_gid])
+  # ...
+end
+```
+
+Sibling-engine concerns (e.g. Aeon) hook this event independently — each
+concern registers its own subscriber via `on_transition`; no hook reads
+another's output; no hook can halt the set for reasons other than raising.
+Because instrumentation happens inside the transition's own transaction, a
+raise in ANY subscriber rolls back that subscriber's writes AND the status
+card AND every other subscriber's writes from the same call — atomicity by
+construction, not by explicit rollback code. This is **not** literal
+threads — `Thread.new` gets its own DB connection and cannot join the
+parent transaction, breaking atomicity. The invariant to test is
+commutativity: registering subscribers in either order must produce
+identical final state (each subscriber's effect must be independent of the
+others', per the ADR). Payload is deliberately GID + state symbols + verb —
+no domain data, no live record reference — so subscribers resolve the
+record themselves (`GlobalID::Locator.locate`) and should query unscoped
+once resolved (default-scope trap — moot given Oscar has no default_scope,
+but spec'd anyway as a regression guard).
 
 ## Restore is mechanical-only
 
-`restore!` flips state and fires its own event that subscribers *may*
-observe, but no engine is obligated to undo anything. Forward cascade
-(subtract) and restore are not inverse operations — restore is generative
-(it re-creates facts about the future), which is a different, harder problem
-than subtraction; that policy belongs to the host app, not Oscar.
+There is no special-cased "restore" event or transition type — `restore` is
+just whatever transition name a taxonomy declares for reversing a state
+(e.g. `trashed → draft`). It fires the exact same generic
+`TRANSITION_EVENT` as every other transition, with `verb: :restore` (or
+whatever name was used). Subscribers *may* observe it, but no engine is
+obligated to undo anything, and Oscar itself never inspects the verb to
+decide whether to auto-cascade anything — "mechanical-only" holds by
+construction, not by a runtime special case. Forward cascade (subtract) and
+restore are not inverse operations — restore is generative (it re-creates
+facts about the future), which is a different, harder problem than
+subtraction; that policy belongs to the host app, not Oscar.
 
 ## Scopes-as-tabs
 
@@ -152,6 +202,9 @@ scope :trashed, -> {
 }
 ```
 
+Implemented by `WhittakerTech::Oscar::ScopeGenerator` (generates one scope per
+declared state, plus an `all_states` escape hatch that ignores state
+entirely) at the same `oscar_taxonomy` declaration time as verb generation.
 Omitting `resource_type` is semantically wrong — the subquery would return IDs
 from every Oscar-managed model, not just this host class — even though UUID
 collision across models is practically impossible. `NO default_scope`

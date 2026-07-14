@@ -13,7 +13,33 @@ module WhittakerTech::Oscar # rubocop:disable Style/OneClassPerFile
   def self.table_name_prefix
     'oscar_'
   end
+
+  # Returns the global {Configuration} instance, initialising it on first call.
+  # @return [Configuration]
+  def self.configuration
+    @configuration ||= Configuration.new
+  end
+
+  # Yields the global {Configuration} instance for block-style setup.
+  # @yieldparam config [Configuration] the mutable configuration object
+  # @return [void]
+  def self.configure
+    yield(configuration)
+  end
+
+  # Resets the global configuration to its defaults. Intended for use in test
+  # +after+ blocks when configuration has been mutated.
+  # @return [Configuration] the new default configuration
+  def self.reset_configuration!
+    @configuration = Configuration.new
+  end
 end
 
 require 'whittaker_tech/oscar/version'
+require 'whittaker_tech/oscar/error'
+require 'whittaker_tech/oscar/taxonomy'
+require 'whittaker_tech/oscar/configuration'
+require 'whittaker_tech/oscar/verb_generator'
+require 'whittaker_tech/oscar/scope_generator'
+require 'whittaker_tech/oscar/events'
 require 'whittaker_tech/oscar/engine'
