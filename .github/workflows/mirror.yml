@@ -1,0 +1,27 @@
+name: Mirror to GitHub
+
+# Gitea is the workshop; GitHub is the storefront. Only master and tags ever
+# reach GitHub — never tea or claude/* branches (per meta/branch-vocabulary.md).
+# Runs after every push to master (i.e. after every "Publish" run) and on
+# every version tag.
+
+on:
+  push:
+    branches: ["master"]
+    tags: ["v*.*.*"]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push master + tags to GitHub mirror
+        run: |
+          git push --force "https://x-access-token:${WHITTAKER_TECH_GITHUB_KEY}@github.com/whittakertech/${{ github.event.repository.name }}.git" \
+            refs/heads/master:refs/heads/master \
+            refs/tags/*:refs/tags/*
+        env:
+          WHITTAKER_TECH_GITHUB_KEY: ${{ secrets.WHITTAKER_TECH_GITHUB_KEY }}
