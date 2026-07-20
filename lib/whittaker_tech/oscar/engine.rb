@@ -4,17 +4,10 @@
 #
 # Responsibilities:
 # - Isolates the +WhittakerTech::Oscar+ namespace from the host application.
-# - Configures UUID as the default primary key type for generated migrations.
 # - Deduplicates migration paths so the engine's +db/migrate+ directory is not
 #   registered twice when the dummy app resolves to the same path.
 class WhittakerTech::Oscar::Engine < Rails::Engine
   isolate_namespace WhittakerTech::Oscar
-
-  initializer 'oscar.generators' do |app|
-    app.config.generators do |g|
-      g.orm :active_record, primary_key_type: :uuid
-    end
-  end
 
   initializer 'oscar.migrations' do |app|
     engine_paths = config.paths['db/migrate'].expanded

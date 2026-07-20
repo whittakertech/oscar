@@ -5,7 +5,11 @@ class CreateOscarStatuses < ActiveRecord::Migration[7.1]
 
   def change
     create_table :oscar_statuses, id: :uuid do |t|
-      poly_resource t, :resource, id_type: :uuid
+      # No id_type: override -- Poly::Migration#poly_resource defaults to
+      # :string precisely so this works polymorphically against any host
+      # app's primary key convention (bigint, uuid, whatever), not just
+      # WhittakerTech's own UUID-PK convention.
+      poly_resource t, :resource
       poly_role t, :resource
       poly_stack t, id_type: :uuid
 

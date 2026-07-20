@@ -28,11 +28,20 @@ class WhittakerTech::Oscar::ScopeGenerator
 
   def define_state_scope!(state)
     resource_type = host_class.name
+    table_name = host_class.table_name
+    primary_key = host_class.primary_key
 
     host_class.scope state, lambda {
-      where(id: WhittakerTech::Oscar::Status.prime
-                                            .where(state: state.to_s, resource_type: resource_type)
-                                            .select(:resource_id))
+      matching_ids = WhittakerTech::Oscar::Status.prime
+                                                 .where(state: state.to_s, resource_type: resource_type)
+                                                 .select(:resource_id)
+      # oscar_statuses.resource_id is :string (Poly's own default, so this
+      # table works against any host PK convention -- uuid, bigint, etc).
+      # Postgres has no implicit uuid=varchar or bigint=varchar comparison
+      # operator, so cast the host's own PK to text rather than relying on
+      # resource_id's column type to happen to match the host. varchar and
+      # text compare natively (no cast needed on the subquery side).
+      where("#{table_name}.#{primary_key}::text IN (#{matching_ids.to_sql})")
     }
   end
 

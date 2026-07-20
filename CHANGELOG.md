@@ -40,3 +40,20 @@ Internal v0.1 engine — no RubyGems publish; tag/publish is a separate go/no-go
   Package-retirement scenario: rejects new-order-style transitions once
   retired, historical associations stay readable, name reuse blocked until
   purge).
+
+### Fixed
+- `create_oscar_statuses` hardcoded `id_type: :uuid` on the polymorphic
+  `resource` reference, overriding `Poly::Migration#poly_resource`'s own
+  `:string` default (which exists precisely so `oscar_statuses` works
+  against any host PK convention, not just UUID). Removed the override.
+  `ScopeGenerator`'s generated state scopes also needed an explicit
+  `::text` cast on the host's own PK column in their subquery -- Postgres
+  has no implicit `uuid = varchar` (or `bigint = varchar`) comparison
+  operator, so a bare `where(id: subquery)` broke for any host whose PK
+  type doesn't happen to already be textual. Regression-covered with a new
+  bigint-PK dummy model (`Gizmo`) alongside the existing uuid-PK ones.
+  Found consuming Oscar from Subscribify (bigint PKs) for its T1 build.
+- Removed the `oscar.generators` initializer's global
+  `primary_key_type: :uuid` override in `engine.rb` -- it silently changed
+  the **host app's** default `rails generate model` behavior for every
+  future model, not just Oscar's own (which generates none).

@@ -51,6 +51,37 @@ CREATE TABLE public.gadgets (
 
 
 --
+-- Name: gizmos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gizmos (
+    id bigint NOT NULL,
+    name character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: gizmos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.gizmos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: gizmos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.gizmos_id_seq OWNED BY public.gizmos.id;
+
+
+--
 -- Name: orders; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -69,7 +100,7 @@ CREATE TABLE public.orders (
 CREATE TABLE public.oscar_statuses (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     resource_type character varying,
-    resource_id uuid,
+    resource_id character varying,
     resource_role character varying,
     is_prime boolean DEFAULT false NOT NULL,
     superseded_by_id uuid,
@@ -130,6 +161,13 @@ CREATE TABLE public.widgets (
 
 
 --
+-- Name: gizmos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gizmos ALTER COLUMN id SET DEFAULT nextval('public.gizmos_id_seq'::regclass);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -151,6 +189,14 @@ ALTER TABLE ONLY public.crates
 
 ALTER TABLE ONLY public.gadgets
     ADD CONSTRAINT gadgets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: gizmos gizmos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gizmos
+    ADD CONSTRAINT gizmos_pkey PRIMARY KEY (id);
 
 
 --
@@ -250,6 +296,7 @@ CREATE INDEX index_widgets_on_crate_id ON public.widgets USING btree (crate_id);
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260713220800'),
 ('20260713220700'),
 ('20260713220600'),
 ('20260713220500'),

@@ -49,4 +49,15 @@ RSpec.describe WhittakerTech::Oscar::ScopeGenerator do
       expect(Gadget.published).to contain_exactly(gadget)
     end
   end
+
+  describe 'non-uuid host primary keys' do
+    it 'works against a bigint-PK host exactly like a uuid-PK host' do
+      draft = Gizmo.create!(name: 'a')
+      published = Gizmo.create!(name: 'b')
+      published.publish!
+
+      expect(Gizmo.draft).to contain_exactly(draft)
+      expect(Gizmo.published).to contain_exactly(published)
+    end
+  end
 end
