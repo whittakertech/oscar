@@ -10,6 +10,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Gitea-only: this job depends on postgres-hatchery, an internal Aerie
+    # Docker-network service unreachable from GitHub's hosted runners.
+    # github.server_url resolves to the Gitea instance's own internal URL
+    # (http://gitea:3000) when running on the self-hosted Gitea Actions
+    # runner, and to https://github.com on real GitHub Actions -- use that
+    # to skip this job entirely on the GitHub mirror instead of letting it
+    # fail loudly on an unreachable hostname.
+    if: github.server_url != 'https://github.com'
 
     # No `services:` block: the self-hosted Gitea Actions runner attaches
     # per-job service containers to the shared `proxy` Docker network, which
