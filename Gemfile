@@ -17,4 +17,7 @@ group :development, :test do
   gem 'rubocop-performance', require: false
   gem 'rubocop-rails', require: false
   gem 'rubocop-rspec', require: false
+
+  gem 'yard', require: false
+  gem 'yard-markdown', require: false
 end

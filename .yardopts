@@ -1,0 +1,12 @@
+--output-dir docs/api
+--plugin markdown
+--markup markdown
+--format markdown
+--title "WhittakerTech::Oscar API Reference"
+--protected
+lib/whittaker_tech/oscar.rb
+lib/whittaker_tech/oscar/*.rb
+app/models/whittaker_tech/oscar/*.rb
+app/models/concerns/whittaker_tech/oscar/*.rb
+-
+README.md

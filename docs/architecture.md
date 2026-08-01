@@ -1,0 +1,296 @@
+# Architecture
+
+Oscar owns lifecycle *visibility*; nothing else. It's a configurable
+lifecycle-state engine — blog-post-shaped (`draft`, `published`, `archived`,
+`trashed`, `purged`) by convention, but taxonomy-driven per model, so a
+model whose lifecycle doesn't look anything like a blog post declares its
+own shape from scratch. States are exclusive; transitions are declared;
+nothing changes state except through a named transition.
+
+`published` is a *visibility* state — Oscar's concern. Private vs. public
+is a separate *access* concern, conditional on visibility, that lives
+entirely outside this engine. Oscar stamps state and does not know who
+reads it.
+
+---
+
+## Boundary tripwires
+
+A few things are deliberately kept out of scope, checked in review rather
+than left to drift:
+
+- **No `audience:`/`visibility_for:`-style key in taxonomy config** — access
+  control is a different concern's job, not Oscar's.
+- **No `superseded:`/versioning state.** History/versioning is
+  [Poly](https://github.com/whittakertech/poly)'s job — Oscar must never
+  grow a supersede state; that would build versioning twice.
+- **No `default_scope`, anywhere** — see [Scopes-as-tabs](#scopes-as-tabs).
+- **No per-actor logic anywhere in this engine.**
+
+---
+
+## Taxonomy config schema
+
+A boring, well-validated hash: zero or more named bases optionally
+registered in `config/initializers/oscar.rb`, plus a required per-model
+taxonomy declaration on each host model. No DSL — a DSL is only worth
+extracting once multiple engines actually consume the same hash shape.
+
+### Named bases
+
+Named bases are registered in `config/initializers/oscar.rb` — nothing is
+pre-registered by the gem itself; a host app registers each name it wants:
+
+```ruby
+WhittakerTech::Oscar.configure do |config|
+  config.bases = {
+    blog_post_visibility: {
+      initial: :draft,
+      states: {
+        draft:     {},
+        published: {},
+        archived:  {},
+        trashed:   {},
+        purged:    { destroyable: true, locked: true }
+      },
+      transitions: {
+        publish: { from: :draft,     to: :published, past: :published },
+        archive: { from: :published, to: :archived,  past: :archived },
+        trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
+        restore: { from: :trashed,   to: :draft,      past: :draft },
+        purge:   { from: :trashed,   to: :purged,     past: :purged }
+      }
+    }
+  }
+end
+```
+
+Each entry is eagerly validated as a complete `WhittakerTech::Oscar::Taxonomy`
+once the `configure` block finishes — an invalid named base raises
+`InvalidTaxonomyError` at boot, not later at first `oscar_taxonomy` use.
+
+Per-model declarations are made on the host model itself, via the
+`oscar_taxonomy` class macro from `WhittakerTech::Oscar::Stateful` — not a
+global registry keyed by class name (which would fight Rails autoloading: a
+model class object isn't a stable, always-loaded key at initializer-run
+time). Every declaration names which (if any) base it inherits via a
+required `base:` keyword — there is no default. Relocating a default (to
+blank, or to `blog_post_visibility`) just moves the silent-assumption
+problem elsewhere; requiring the keyword removes it. `base:` accepts:
+
+- a registered `Symbol` — deep-merges that base's hash under the override,
+  key-by-key per state/transition. Oscar's own `Post` dummy fixture uses
+  `base: :blog_post_visibility` with an empty override, since its shape is
+  an exact match for the preset:
+
+  ```ruby
+  class Post < ApplicationRecord
+    include WhittakerTech::Oscar::Stateful
+
+    oscar_taxonomy(base: :blog_post_visibility)
+  end
+  ```
+
+- `nil`, `[]`, or `{}` (blank) — nothing inherited; the override *is* the
+  entire taxonomy. Oscar's `Package` dummy fixture uses `base: []`: its
+  `retired` state and lack of `archived`/`trashed` don't share
+  `blog_post_visibility`'s shape, so it declares itself from nothing:
+
+  ```ruby
+  class Package < ApplicationRecord
+    include WhittakerTech::Oscar::Stateful
+
+    oscar_taxonomy base: [],
+                   initial: :draft,
+                   states: { draft: {}, published: {}, retired: {}, purged: { destroyable: true, locked: true } },
+                   transitions: {
+                     publish: { from: :draft, to: :published, past: :published },
+                     retire: { from: :published, to: :retired, past: :retired },
+                     purge: { from: :retired, to: :purged, past: :purged }
+                   }
+  end
+  ```
+
+- an unregistered `Symbol` raises `UnknownBaseError`; anything else
+  (an unsupported type) raises `ArgumentError` — both before any merge or
+  `Taxonomy.new` validation is attempted
+
+**Non-goal:** a base can only be added to, never subtracted from — the
+underlying merge (`Taxonomy.deep_merge`/`merge_hash`) is additive-only. A
+model that wants `blog_post_visibility` minus one state (say, no `archived`)
+cannot express that via `base:`; it declares its own taxonomy from
+`base: []` instead, as `Package` and `Widget` both do (see
+[Examples](examples/)).
+
+A transition may also declare `escapes_lock: true` to be the sanctioned exit
+from an otherwise-locked state (e.g. a `reinstate` transition off a locked
+`banned` state — see [Examples](examples/)). Boot-time validation
+(`WhittakerTech::Oscar::Taxonomy.new`, raising `InvalidTaxonomyError`)
+rejects: unknown top-level or per-state/per-transition keys, an undeclared
+`:initial` state, transitions referencing undeclared states, states
+unreachable via `:initial` or any transition's `:to`, and any transition
+missing its declared `:past` form.
+
+Declared past forms are **required in config**, not inflected automatically
+— irregular English (`set_aside`, not `set_asided`) makes automatic
+inflection unsafe.
+
+---
+
+## Protected verbs
+
+`destroy`, `delete`, and `update` may never be generated or overridden by
+the verb generator; Oscar raises at declaration time (a `method_defined?`
+guard). Inbound protection is separate: `before_destroy` raises unless the
+record's current state has `destroyable: true` — so a parent's
+`dependent: :destroy` can never silently hard-delete a live
+(non-purge-eligible) record. `destroy` stays lethal, but only from states
+the taxonomy explicitly marks destroyable; the taxonomy lock is the safety,
+not method aliasing.
+
+---
+
+## State history (Poly::Stack)
+
+State history persists on a separate polymorphic card table
+(`oscar_statuses`) via `Poly::Stack`, not by mutating a column on the host
+row:
+
+```ruby
+class WhittakerTech::Oscar::Status < WhittakerTech::Oscar::ApplicationRecord
+  belongs_to :resource, polymorphic: true
+  include Poly::Joins
+  include Poly::Stack
+  poly_stack :resource
+end
+```
+
+`WhittakerTech::Oscar::Stateful` (the host concern) declares
+`has_many :oscar_statuses, as: :resource, dependent: :destroy` and exposes
+`oscar_state` (resolves from `oscar_statuses.prime.first&.state`, falling
+back to the taxonomy's `:initial` when no transition has fired yet),
+`oscar_state?(name)`, and `oscar_transition!(name)` (validates the declared
+transition, then appends a card). "Current" = `superseded_by_id.nil? &&
+is_prime?` — real indexable columns, no JSONB digging.
+
+**Decision: stack-only**, no denormalized host-table state column. A
+denormalized column would add a same-transaction column/stack-head
+agreement invariant to maintain for no requirement Oscar currently has;
+that fork stays documented here for later, if scope-query performance ever
+demands it.
+
+### History disposal on purge
+
+A real `destroy` fired from a purge-eligible state must not orphan
+`oscar_statuses` rows. **Decision: history dies with the record** — the
+host concern declares `has_many :oscar_statuses, as: :resource, dependent:
+:destroy`. The host row is the uniqueness anchor (a locked-until-purge name
+frees only when the row itself is destroyed); a status row surviving past
+purge would silently break that invariant for anything that ever checked
+name occupancy via the status table instead of the host table. Durable
+tombstone/audit history that survives purge is a dedicated audit layer's
+territory, not Oscar's.
+
+---
+
+## Uniqueness: locked-until-purge
+
+Plain unique indexes on host-table attributes (e.g. `name`) are legal
+as-is: a name frees only when the terminal-state (purge-eligible) row is
+actually destroyed. No partial-index machinery, no name-reuse config flag —
+documented fork for later: a model that needs name-reuse-while-history-persists
+would need state denormalized to a host column plus a partial index, or
+validation-only enforcement, gated by a per-taxonomy config flag.
+
+---
+
+## Cascade: independent registered callbacks
+
+Implemented via `ActiveSupport::Notifications`
+(`WhittakerTech::Oscar::TRANSITION_EVENT`, fired by
+`WhittakerTech::Oscar.instrument_transition` — see
+`lib/whittaker_tech/oscar/events.rb`). Every `oscar_transition!` call fires
+exactly one generic event, from inside the same `with_lock` transaction
+that appended the status card:
+
+```ruby
+WhittakerTech::Oscar.on_transition do |payload|
+  # payload => { resource_gid:, from:, to:, verb: }
+  record = GlobalID::Locator.locate(payload[:resource_gid])
+  # ...
+end
+```
+
+Sibling concerns hook this event independently — each concern registers its
+own subscriber via `on_transition`; no hook reads another's output; no hook
+can halt the set for reasons other than raising. Because instrumentation
+happens inside the transition's own transaction, a raise in *any*
+subscriber rolls back that subscriber's writes **and** the status card
+**and** every other subscriber's writes from the same call — atomicity by
+construction, not by explicit rollback code. This is **not** literal
+threads — `Thread.new` gets its own DB connection and cannot join the
+parent transaction, breaking atomicity.
+
+The invariant to test is commutativity: registering subscribers in either
+order must produce identical final state (each subscriber's effect must be
+independent of the others'). Payload is deliberately GID + state symbols +
+verb — no domain data, no live record reference — so subscribers resolve
+the record themselves (`GlobalID::Locator.locate`) and should query
+unscoped once resolved (moot given Oscar has no `default_scope`, but a
+useful regression guard to spec anyway).
+
+### Restore is mechanical-only
+
+There is no special-cased "restore" event or transition type — `restore` is
+just whatever transition name a taxonomy declares for reversing a state
+(e.g. `trashed → draft`). It fires the exact same generic
+`TRANSITION_EVENT` as every other transition, with `verb: :restore` (or
+whatever name was used). Subscribers *may* observe it, but no engine is
+obligated to undo anything, and Oscar itself never inspects the verb to
+decide whether to auto-cascade anything — "mechanical-only" holds by
+construction, not by a runtime special case. Forward cascade (subtract) and
+restore are not inverse operations — restore is generative (it re-creates
+facts about the future), which is a different, harder problem than
+subtraction; that policy belongs to the host app, not Oscar.
+
+---
+
+## Scopes-as-tabs
+
+One table. Oscar generates a named scope per taxonomy state on the **host**
+class (e.g. `Package.trashed`, `Package.published`), so an admin UI can
+render tabs directly from the taxonomy config. Since `oscar_statuses` is
+polymorphic and shared across every Oscar-managed model, every generated
+scope filters on **both** `resource_type` and `state`:
+
+```ruby
+scope :trashed, -> {
+  where(id: WhittakerTech::Oscar::Status.prime
+                                         .where(state: 'trashed', resource_type: name)
+                                         .select(:resource_id))
+}
+```
+
+Implemented by `WhittakerTech::Oscar::ScopeGenerator` (generates one scope
+per declared state, plus an `all_states` escape hatch that ignores state
+entirely) at the same `oscar_taxonomy` declaration time as verb generation.
+Omitting `resource_type` is semantically wrong — the subquery would return
+IDs from every Oscar-managed model, not just this host class — even though
+UUID collision across models is practically impossible. **No
+`default_scope` anywhere**; visibility filtering is explicit scopes, not
+implicit query scoping. Per-tab counts (a blog CMS's `Trash (14)`) are a
+host-app concern, not Oscar's.
+
+---
+
+## Concurrency
+
+Transition execution wraps the read-validate-append sequence in
+`record.with_lock` (row-level `SELECT ... FOR UPDATE` inside the
+transaction). Without it, two concurrent transitions on the same record can
+race `Poly::Stack`'s prime-demotion (`before_create`/`after_create`) across
+two connections and produce two primes or an interleaved
+`superseded_by_id` chain. The lock wraps the whole transition, not just the
+card insert, so a losing writer sees the winner's already-applied state and
+raises the ordinary undeclared-transition error rather than
+double-applying.
