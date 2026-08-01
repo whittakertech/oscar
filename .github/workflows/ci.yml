@@ -71,3 +71,23 @@ jobs:
           bundle exec bundler-audit update
           bundle exec bundler-audit check
         continue-on-error: true
+
+  github_ci:
+    name: GitHub CI (shared)
+    # Only runs on the public GitHub mirror -- the `test` job above already
+    # covers Gitea (Postgres via postgres-hatchery). Gitea itself skips this
+    # cleanly: the job-level `if:` is evaluated before Gitea would attempt
+    # to resolve the cross-org `uses:` reference, so this doesn't hit the
+    # "repository not found" failure a wrong/GitHub-style org slug would
+    # (verified against WhittakerTech-org/midas's identical guard, which
+    # shows `conclusion: skipped` on every Gitea run).
+    if: github.server_url == 'https://github.com'
+    uses: whittakertech/.github/.github/workflows/master-ci.yml@main
+    with:
+      postgres: true
+      # No .yardopts/mkdocs.yml yet, and still internal/unpublished (see
+      # CHANGELOG) -- RubyGems publish is a separate go/no-go decision, not
+      # implied by mirroring to GitHub.
+      docs_enabled: false
+      release_enabled: false
+    secrets: inherit
