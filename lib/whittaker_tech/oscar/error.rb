@@ -26,5 +26,9 @@ module WhittakerTech # rubocop:disable Style/ClassAndModuleChildren
     # or when the method Oscar would generate already exists on the host
     # class (and would silently be overridden).
     class ProtectedVerbError < Error; end
+
+    # Raised at `oscar_taxonomy` declaration time when the `base:` keyword
+    # names a symbol not registered in `WhittakerTech::Oscar.configuration.bases`.
+    class UnknownBaseError < Error; end
   end
 end

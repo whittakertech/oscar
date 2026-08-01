@@ -3,7 +3,7 @@
 ## Identity
 
 Oscar owns lifecycle visibility; nothing else. Oscar is a configurable
-lifecycle-state engine — WordPress-shaped (`draft`, `published`, `archived`,
+lifecycle-state engine — blog-post-shaped (`draft`, `published`, `archived`,
 `trashed`, `purged`) but taxonomy-driven per model. States are exclusive;
 transitions are declared; nothing changes state except through a named
 transition. `published` is a visibility state (Oscar's). Private vs public is
@@ -24,54 +24,101 @@ it.
 
 ## Taxonomy config schema (v0.1)
 
-A boring, well-validated hash in `config/initializers/oscar.rb` — root-level
-defaults plus per-model overrides. No DSL in v0.1; a DSL is only extracted
-once two engines actually consume the hash.
+A boring, well-validated hash: zero or more named bases optionally
+registered in `config/initializers/oscar.rb`, plus a required per-model
+taxonomy declaration on each host model. No DSL in v0.1; a DSL is only
+extracted once two engines actually consume the hash.
 
-Root defaults live in `config/initializers/oscar.rb`:
+### Named bases
+
+Named bases are registered in `config/initializers/oscar.rb` — nothing is
+pre-registered by the gem itself; a host app registers each name it wants:
 
 ```ruby
 WhittakerTech::Oscar.configure do |config|
-  config.taxonomy = {
-    initial: :draft,
-    states: {
-      draft:     {},
-      published: {},
-      archived:  {},
-      trashed:   {},
-      purged:    { destroyable: true, locked: true }
-    },
-    transitions: {
-      publish: { from: :draft,     to: :published, past: :published },
-      archive: { from: :published, to: :archived,  past: :archived },
-      trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
-      restore: { from: :trashed,   to: :draft,      past: :draft },
-      purge:   { from: :trashed,   to: :purged,     past: :purged }
+  config.bases = {
+    blog_post_visibility: {
+      initial: :draft,
+      states: {
+        draft:     {},
+        published: {},
+        archived:  {},
+        trashed:   {},
+        purged:    { destroyable: true, locked: true }
+      },
+      transitions: {
+        publish: { from: :draft,     to: :published, past: :published },
+        archive: { from: :published, to: :archived,  past: :archived },
+        trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
+        restore: { from: :trashed,   to: :draft,      past: :draft },
+        purge:   { from: :trashed,   to: :purged,     past: :purged }
+      }
     }
   }
 end
 ```
 
-Per-model overrides are declared on the host model itself, via the
+Each entry is eagerly validated as a complete `WhittakerTech::Oscar::Taxonomy`
+once the `configure` block finishes — an invalid named base raises
+`InvalidTaxonomyError` at boot, not later at first `oscar_taxonomy` use.
+
+Per-model declarations are made on the host model itself, via the
 `oscar_taxonomy` class macro from `WhittakerTech::Oscar::Stateful` — not a
 global registry keyed by class name (which would fight Rails autoloading: a
 model class object isn't a stable, always-loaded key at initializer-run
-time). The macro deep-merges its hash over the root defaults, key-by-key per
-state/transition, and validates immediately:
+time). Every declaration names which (if any) base it inherits via a
+required `base:` keyword — there is no default. Relocating a default (to
+blank, or to `blog_post_visibility`) just moves the silent-assumption
+problem elsewhere; requiring the keyword removes it. `base:` accepts:
 
-```ruby
-class Package < ApplicationRecord
-  include WhittakerTech::Oscar::Stateful
+- a registered `Symbol` — deep-merges that base's hash under the override,
+  key-by-key per state/transition. `spec/dummy/app/models/post.rb` uses
+  `base: :blog_post_visibility` with an empty override, since its shape is
+  an exact match for the preset:
 
-  oscar_taxonomy states: { retired: { destroyable: true } },
-                 transitions: { retire: { from: %i[draft published], to: :retired, past: :retired } }
-end
-```
+  ```ruby
+  class Post < ApplicationRecord
+    include WhittakerTech::Oscar::Stateful
+
+    oscar_taxonomy(base: :blog_post_visibility)
+  end
+  ```
+
+- `nil`, `[]`, or `{}` (blank) — nothing inherited; the override *is* the
+  entire taxonomy. `spec/dummy/app/models/package.rb` uses `base: []`: its
+  `retired` state and lack of `archived`/`trashed` don't share
+  `blog_post_visibility`'s shape, so it declares itself from nothing:
+
+  ```ruby
+  class Package < ApplicationRecord
+    include WhittakerTech::Oscar::Stateful
+
+    oscar_taxonomy base: [],
+                   initial: :draft,
+                   states: { draft: {}, published: {}, retired: {}, purged: { destroyable: true, locked: true } },
+                   transitions: {
+                     publish: { from: :draft, to: :published, past: :published },
+                     retire: { from: :published, to: :retired, past: :retired },
+                     purge: { from: :retired, to: :purged, past: :purged }
+                   }
+  end
+  ```
+
+- an unregistered `Symbol` raises `UnknownBaseError`; anything else
+  (an unsupported type) raises `ArgumentError` — both before any merge or
+  `Taxonomy.new` validation is attempted
+
+**Non-goal:** a base can only be added to, never subtracted from — the
+underlying merge (`Taxonomy.deep_merge`/`merge_hash`) is additive-only. A
+model that wants `blog_post_visibility` minus one state (say, no `archived`)
+cannot express that via `base:`; it declares its own taxonomy from
+`base: []` instead, as `Package` and `Widget` both do.
 
 A transition may also declare `escapes_lock: true` to be the sanctioned exit
 from an otherwise-locked state (e.g. a `reinstate` transition off a locked
-`banned` state) — see Concurrency/lock enforcement in `Oscar::Stateful`
-below. Boot-time validation (`WhittakerTech::Oscar::Taxonomy.new`, raising
+`banned` state, see `spec/dummy/app/models/widget.rb`) — see
+Concurrency/lock enforcement in `Oscar::Stateful` below. Boot-time
+validation (`WhittakerTech::Oscar::Taxonomy.new`, raising
 `InvalidTaxonomyError`) rejects: unknown top-level or per-state/per-transition
 keys, an undeclared `:initial` state, transitions referencing undeclared
 states, states unreachable via `:initial` or any transition's `:to`, and any
@@ -209,7 +256,7 @@ Omitting `resource_type` is semantically wrong — the subquery would return IDs
 from every Oscar-managed model, not just this host class — even though UUID
 collision across models is practically impossible. `NO default_scope`
 anywhere; visibility filtering is explicit scopes plus Solomon resolution, not
-implicit query scoping. Per-tab counts (WordPress `Trash (14)`) are a
+implicit query scoping. Per-tab counts (a blog CMS's `Trash (14)`) are a
 host/Clio concern, not Oscar's.
 
 ## Concurrency

@@ -8,6 +8,7 @@
 #     include WhittakerTech::Oscar::Stateful
 #
 #     oscar_taxonomy(
+#       base: [], # or a Symbol naming a registered WhittakerTech::Oscar.configuration.bases entry
 #       initial: :draft,
 #       states: {
 #         draft: {}, published: {}, trashed: {},
@@ -54,16 +55,24 @@ module WhittakerTech::Oscar::Stateful
   end
 
   class_methods do
-    # Declares this model's taxonomy, deep-merged over the root defaults from
-    # WhittakerTech::Oscar.configuration.taxonomy. Raises
-    # WhittakerTech::Oscar::InvalidTaxonomyError immediately on any malformed
-    # shape, then generates `<transition>!`/`<past>?` methods (raising
-    # WhittakerTech::Oscar::ProtectedVerbError on any unsafe collision — see
-    # WhittakerTech::Oscar::VerbGenerator) and a named scope per state (see
-    # WhittakerTech::Oscar::ScopeGenerator). There is no lazy/deferred
-    # validation or generation.
-    def oscar_taxonomy(hash)
-      merged = WhittakerTech::Oscar::Taxonomy.deep_merge(WhittakerTech::Oscar.configuration.taxonomy, hash)
+    # Declares this model's taxonomy, deep-merged over the resolved `base:`.
+    # `base:` is required — no default — and resolves to a plain hash before
+    # being passed as `Taxonomy.deep_merge`'s base argument:
+    # * a registered Symbol (looked up in
+    #   WhittakerTech::Oscar.configuration.bases) → that base's hash, or
+    #   raises WhittakerTech::Oscar::UnknownBaseError if unregistered
+    # * +nil+, <tt>[]</tt>, or <tt>{}</tt> → blank (+{}+, nothing inherited)
+    # * anything else → raises ArgumentError before `deep_merge` is ever
+    #   reached
+    #
+    # Raises WhittakerTech::Oscar::InvalidTaxonomyError immediately on any
+    # malformed merged shape, then generates `<transition>!`/`<past>?`
+    # methods (raising WhittakerTech::Oscar::ProtectedVerbError on any unsafe
+    # collision — see WhittakerTech::Oscar::VerbGenerator) and a named scope
+    # per state (see WhittakerTech::Oscar::ScopeGenerator). There is no
+    # lazy/deferred validation or generation.
+    def oscar_taxonomy(base:, **hash)
+      merged = WhittakerTech::Oscar::Taxonomy.deep_merge(oscar_resolve_taxonomy_base(base), hash)
       taxonomy = WhittakerTech::Oscar::Taxonomy.new(merged)
       WhittakerTech::Oscar::VerbGenerator.new(self, taxonomy).define!
       WhittakerTech::Oscar::ScopeGenerator.new(self, taxonomy).define!
@@ -72,6 +81,23 @@ module WhittakerTech::Oscar::Stateful
 
     def oscar_taxonomy_config
       @oscar_taxonomy_config || raise(WhittakerTech::Oscar::Error, "#{name} has not declared oscar_taxonomy")
+    end
+
+    private
+
+    def oscar_resolve_taxonomy_base(base)
+      case base
+      when Symbol
+        WhittakerTech::Oscar.configuration.bases.fetch(base) do
+          raise WhittakerTech::Oscar::UnknownBaseError,
+                "unknown taxonomy base #{base.inspect} (not registered in WhittakerTech::Oscar.configuration.bases)"
+        end
+      when nil, [], {}
+        {}
+      else
+        raise ArgumentError,
+              "oscar_taxonomy base: must be a registered Symbol, nil, [], or {} (blank) — got #{base.inspect}"
+      end
     end
   end
 

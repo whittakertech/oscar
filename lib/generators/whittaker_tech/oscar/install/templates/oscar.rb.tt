@@ -6,21 +6,29 @@
 # except through a named transition. See docs/design.md (in the oscar gem)
 # for the full schema and boundary rules.
 #
+# Register named taxonomy bases here. No base is pre-registered by the gem
+# itself -- a host model only inherits one by naming it explicitly via the
+# required `base:` keyword on its own `oscar_taxonomy` declaration (or opts
+# out entirely with `base: []`).
+#
 # WhittakerTech::Oscar.configure do |config|
-#   config.taxonomy = {
-#     states: {
-#       draft:     { destroyable: false },
-#       published: { destroyable: false },
-#       archived:  { destroyable: false },
-#       trashed:   { destroyable: false },
-#       purged:    { destroyable: true, locked: true }
-#     },
-#     transitions: {
-#       publish: { from: :draft,     to: :published, past: :published },
-#       archive: { from: :published, to: :archived,  past: :archived },
-#       trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
-#       restore: { from: :trashed,   to: :draft,      past: :draft },
-#       purge:   { from: :trashed,   to: :purged,     past: :purged }
+#   config.bases = {
+#     blog_post_visibility: {
+#       initial: :draft,
+#       states: {
+#         draft:     { destroyable: false },
+#         published: { destroyable: false },
+#         archived:  { destroyable: false },
+#         trashed:   { destroyable: false },
+#         purged:    { destroyable: true, locked: true }
+#       },
+#       transitions: {
+#         publish: { from: :draft,     to: :published, past: :published },
+#         archive: { from: :published, to: :archived,  past: :archived },
+#         trash:   { from: %i[draft published archived], to: :trashed, past: :trashed },
+#         restore: { from: :trashed,   to: :draft,      past: :draft },
+#         purge:   { from: :trashed,   to: :purged,     past: :purged }
+#       }
 #     }
 #   }
 # end

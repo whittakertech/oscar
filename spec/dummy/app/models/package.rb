@@ -13,6 +13,7 @@ class Package < ApplicationRecord
   has_many :orders
 
   oscar_taxonomy(
+    base: [],
     initial: :draft,
     states: {
       draft: {},

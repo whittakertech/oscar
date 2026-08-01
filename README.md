@@ -3,7 +3,7 @@
 A configurable lifecycle-visibility state machine engine for Rails.
 
 Oscar generalizes soft-delete into a taxonomy-driven lifecycle state machine —
-WordPress-shaped (`draft`, `published`, `archived`, `trashed`, `purged`) but
+blog-post-shaped (`draft`, `published`, `archived`, `trashed`, `purged`) but
 configurable per host model. States are exclusive, transitions are declared,
 and nothing changes state except through a named transition. State history
 persists via [Poly::Stack](https://github.com/whittakertech/poly).

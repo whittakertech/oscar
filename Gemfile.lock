@@ -9,7 +9,7 @@ GIT
 PATH
   remote: .
   specs:
-    whittaker_tech-oscar (0.1.0)
+    whittaker_tech-oscar (0.2.0)
       pg (>= 1.1)
       poly (~> 1.1)
       rails (>= 7.1)

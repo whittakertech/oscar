@@ -7,6 +7,7 @@ class Gizmo < ApplicationRecord
   include WhittakerTech::Oscar::Stateful
 
   oscar_taxonomy(
+    base: [],
     initial: :draft,
     states: {
       draft: {},

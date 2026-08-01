@@ -1,14 +1,5 @@
 name: Publish (squash tea -> master)
 
-# Manual-only. Per meta/branch-vocabulary.md: publish = squash-merge tea into
-# master on Gitea; the existing push-mirror + tag + shared release pipeline
-# handle the GitHub storefront automatically once master moves — this
-# workflow does not (and should not) touch GitHub directly.
-#
-# Deliberately does NOT re-anchor tea (git reset --hard master + force-push)
-# — that's a separate, more destructive step (rewrites tea's history) done
-# as its own deliberate action, not bundled here.
-
 on:
   workflow_dispatch:
     inputs:
@@ -18,33 +9,7 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'publish'
-    steps:
-      - name: Checkout master
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: master
-
-      - name: Configure git identity
-        run: |
-          git config user.name "bubo-bot"
-          git config user.email "bubo-bot@whittakertech.com"
-
-      - name: Squash-merge tea into master
-        run: |
-          git fetch origin tea
-          if git merge-base --is-ancestor origin/tea master; then
-            echo "tea has nothing new to publish — master is already up to date."
-            exit 0
-          fi
-          git merge --squash origin/tea
-          git commit -m "Publish: squash-merge tea into master ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-
-      - name: Push to master
-        run: |
-          git remote set-url origin "https://bubo-bot:${BUBO_BOT_TOKEN}@gitea.whittakertech.com/${{ github.repository }}.git"
-          git push origin HEAD:master
-        env:
-          BUBO_BOT_TOKEN: ${{ secrets.BUBO_BOT_TOKEN }}
+    uses: WhittakerTech-org/.github/.github/workflows/publish.yml@main
+    with:
+      confirm: ${{ github.event.inputs.confirm }}
+    secrets: inherit

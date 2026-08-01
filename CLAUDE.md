@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Overview
 
 `whittaker_tech-oscar` is a Rails engine gem that owns lifecycle visibility for
-host models via a configurable, taxonomy-driven state machine (WordPress-shaped:
+host models via a configurable, taxonomy-driven state machine (blog-post-shaped:
 draft, published, archived, trashed, purged). It has no UI, no routes, and no
 controllers — it's a state machine plus generated scopes/verbs on host models.
 PostgreSQL is required (not optional) — state history persists via `Poly::Stack`

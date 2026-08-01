@@ -134,4 +134,81 @@ RSpec.describe WhittakerTech::Oscar::Stateful do
       expect(errors.size).to eq(1)
     end
   end
+
+  describe '.oscar_taxonomy base: keyword' do
+    let(:host_class) do
+      Class.new(ApplicationRecord) do
+        self.table_name = 'widgets'
+        include WhittakerTech::Oscar::Stateful
+      end
+    end
+
+    let(:blog_post_visibility) do
+      {
+        initial: :draft,
+        states: { draft: {}, published: {}, purged: { destroyable: true, locked: true } },
+        transitions: {
+          publish: { from: :draft, to: :published, past: :published },
+          purge: { from: :published, to: :purged, past: :purged }
+        }
+      }
+    end
+
+    after { WhittakerTech::Oscar.reset_configuration! }
+
+    it 'resolves a registered Symbol base identically to declaring that shape inline' do
+      WhittakerTech::Oscar.configure { |config| config.bases = { blog_post_visibility: blog_post_visibility } }
+
+      host_class.oscar_taxonomy(base: :blog_post_visibility)
+      taxonomy = host_class.oscar_taxonomy_config
+
+      expect(taxonomy.initial).to eq(:draft)
+      expect(taxonomy.states.keys).to contain_exactly(:draft, :published, :purged)
+      expect(taxonomy.transition(:publish)[:to]).to eq(:published)
+    end
+
+    it 'produces only the override states/transitions when base: is blank ([])' do
+      host_class.oscar_taxonomy(
+        base: [],
+        initial: :trialing,
+        states: { trialing: {}, active: {} },
+        transitions: { activate: { from: :trialing, to: :active, past: :active } }
+      )
+
+      taxonomy = host_class.oscar_taxonomy_config
+      expect(taxonomy.states.keys).to contain_exactly(:trialing, :active)
+    end
+
+    it 'treats nil and {} as blank identically to []' do
+      [nil, {}].each do |blank|
+        klass = Class.new(ApplicationRecord) do
+          self.table_name = 'widgets'
+          include WhittakerTech::Oscar::Stateful
+        end
+        klass.oscar_taxonomy(
+          base: blank,
+          initial: :a,
+          states: { a: {}, b: {} },
+          transitions: { go: { from: :a, to: :b, past: :went } }
+        )
+
+        expect(klass.oscar_taxonomy_config.states.keys).to contain_exactly(:a, :b)
+      end
+    end
+
+    it 'raises UnknownBaseError naming the bad symbol, before any Taxonomy.new call' do
+      expect { host_class.oscar_taxonomy(base: :typo_name) }
+        .to raise_error(WhittakerTech::Oscar::UnknownBaseError, /typo_name/)
+    end
+
+    it 'raises ArgumentError for an unsupported base: type' do
+      expect { host_class.oscar_taxonomy(base: 'blog_post_visibility') }
+        .to raise_error(ArgumentError, /base:/)
+    end
+
+    it 'raises ArgumentError when base: is omitted entirely' do
+      expect { host_class.oscar_taxonomy(initial: :draft, states: { draft: {} }, transitions: {}) }
+        .to raise_error(ArgumentError, /base/)
+    end
+  end
 end

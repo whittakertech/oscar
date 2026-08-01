@@ -7,6 +7,7 @@ class Gadget < ApplicationRecord
   include WhittakerTech::Oscar::Stateful
 
   oscar_taxonomy(
+    base: [],
     initial: :draft,
     states: { draft: {}, published: {} },
     transitions: { publish: { from: :draft, to: :published, past: :published } }

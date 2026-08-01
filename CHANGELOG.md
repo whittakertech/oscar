@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-01
+
+Internal v0.2 engine — no RubyGems publish; tag/publish is a separate go/no-go.
+
+### Added
+- Named taxonomy `bases` registry: `WhittakerTech::Oscar.configure { |config| config.bases = { name: {...} } }`
+  registers zero or more named bases, each eagerly validated as a complete `Taxonomy` when the `configure`
+  block finishes — an invalid named base raises `InvalidTaxonomyError` at boot, not at first `oscar_taxonomy`
+  use. Ships the `blog_post_visibility` preset convention (draft/published/archived/trashed/purged), though
+  the gem itself pre-registers nothing — a host app must register it.
+- `oscar_taxonomy` gains a required `base:` keyword, no default: a registered `Symbol` resolves via
+  `config.bases`; `nil`/`[]`/`{}` means blank (nothing inherited); anything else raises before any merge is
+  attempted.
+- `WhittakerTech::Oscar::UnknownBaseError`, raised when `base:` names a `Symbol` not registered in
+  `config.bases`.
+
+### Removed
+- `config.taxonomy=` (the single unnamed root-default taxonomy) — replaced outright by the named `bases`
+  registry, no deprecation shim (confirmed zero real consumers outside this repo's own dummy fixtures).
+
 ## [Unreleased]
 
 Internal v0.1 engine — no RubyGems publish; tag/publish is a separate go/no-go.
@@ -35,7 +55,7 @@ Internal v0.1 engine — no RubyGems publish; tag/publish is a separate go/no-go
   status-card write, so a subscriber raising rolls back everything from
   that transition. `WhittakerTech::Oscar.on_transition` registration sugar.
   No special-cased "restore" event — restore is just a regular transition.
-- Dummy-app proofs: `Post` (canonical WordPress taxonomy, full lifecycle
+- Dummy-app proofs: `Post` (canonical blog-post taxonomy, full lifecycle
   through a real `destroy`) and `Package`/`Order` (Hello Dancer
   Package-retirement scenario: rejects new-order-style transitions once
   retired, historical associations stay readable, name reuse blocked until

@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.homepage    = 'https://github.com/whittakertech/oscar'
   spec.summary     = 'Configurable lifecycle-visibility state machine engine for Rails'
   spec.description = 'A Rails engine that owns lifecycle visibility for host models via a ' \
-                     'taxonomy-driven, configurable state machine (WordPress-shaped: draft, ' \
+                     'taxonomy-driven, configurable state machine (blog-post-shaped: draft, ' \
                      'published, archived, trashed, purged). States are exclusive, transitions ' \
                      'are declared, and history persists via Poly::Stack.'
   spec.license     = 'MIT'

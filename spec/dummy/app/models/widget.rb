@@ -11,6 +11,7 @@ class Widget < ApplicationRecord
   scope :named, ->(name) { where(name: name) }
 
   oscar_taxonomy(
+    base: [],
     initial: :draft,
     states: {
       draft: {},
