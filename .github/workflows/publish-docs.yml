@@ -1,0 +1,52 @@
+name: Publish Docs
+
+# GitHub-only, same pattern as ci.yml's github_ci job: this file is mirrored
+# to Gitea too (it's the same repo), but the actual publish only makes sense
+# once content has reached the public GitHub mirror, and Codex's
+# publish_docs.yml (which this calls) only exists there.
+#
+# build_docs generates the YARD API reference (docs/api/* is gitignored --
+# generated on demand, not committed) and uploads it as an artifact;
+# publish_docs downloads that artifact and calls Codex's reusable workflow,
+# which mounts it alongside the handwritten docs/*.md, builds the unified
+# Astro/Starlight site, and deploys to this repo's own gh-pages branch.
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+jobs:
+  build_docs:
+    name: Build YARD API reference
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Generate YARD docs
+        run: bundle exec yard doc
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: docs/api/
+
+  publish_docs:
+    name: Publish to gh-pages via Codex
+    if: github.server_url == 'https://github.com'
+    needs: build_docs
+    uses: whittakertech/codex/.github/workflows/publish_docs.yml@master
+    with:
+      engine_owner: whittakertech
+      engine_repo: oscar
+      engine_ref: ${{ github.sha }}
+      site_url: https://oscar.whittakertech.com
+    secrets: inherit
